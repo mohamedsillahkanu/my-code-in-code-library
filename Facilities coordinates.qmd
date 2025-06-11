@@ -1,0 +1,653 @@
+---
+title: "Mapping the locations of health facilities using shapefiles"
+weight: 3
+order: 3
+format: 
+  html:
+    self-contained: true
+    code-copy: true
+    toc: true
+    toc-depth: 4
+---
+
+## Overview
+
+Mapping health facility locations creates powerful visualizations that reveal healthcare infrastructure patterns, service distribution, and accessibility across geographic areas. This process combines facility coordinate data with administrative boundaries to generate informative maps that support strategic planning and resource allocation.
+
+::: {.callout-note title="Objectives" appearance="simple"}
+
+- Visualize the geographic distribution of health facilities across administrative boundaries
+- Visualize the geographic distribution of health facilities by type across administrative boundaries
+
+:::
+
+## Key Concepts
+
+Understanding these fundamental concepts ensures successful visualization of health facility data:
+
+### Health facility mapping basics
+
+**What is health facility mapping?**  
+
+**Health facility mapping** is the process of visualizing where health facilities are located by plotting their coordinates on maps with administrative boundaries. It combines location data (latitude/longitude) with geographic context to show distribution.
+
+
+### Coordinate reference systems and projections
+
+**What are coordinate reference systems (crs)?**
+
+Coordinate systems define how geographic locations are represented numerically. Two main types include:
+
+* **Geographic Coordinate System (GCS)** – Uses latitude and longitude (e.g., WGS84, EPSG:4326)
+* **Projected Coordinate System** – Uses flat, projected coordinates for specific regions (e.g., UTM)
+
+**Importance of coordinate systems:**
+
+* Ensure accurate placement of health facilities on maps
+* Enable distance and area calculations
+* Support overlay with administrative boundaries
+* Facilitate spatial analysis and accessibility modeling
+
+**Common issues:**
+
+* **Missing coordinate values**
+
+  Example: A health facility row has a blank entry for longitude or latitude, preventing it from being mapped.
+
+* **Incorrect formats**
+
+  Example: Coordinates provided as `8°29'30"N` instead of decimal degrees like `8.4917`, causing errors during mapping.
+
+* **Projection mismatches between datasets**
+
+  Example: A shapefile uses UTM projection while facility data uses WGS84, resulting in misaligned map layers.
+
+* **Inaccurate locations due to low precision**
+
+  Example: Coordinates given as `8.4, -11.7` instead of `8.412356, -11.736981`, placing the facility far from its true location.
+
+**Solutions to common coordinate issues**
+
+* **Missing coordinate values**
+
+  To handle missing longitude or latitude values, filter them out
+
+* **Incorrect coordinate formats**
+
+  If coordinates are in degrees-minutes-seconds (DMS) format instead of decimal degrees, then convert to decimal format.
+
+* **Projection mismatches between datasets**
+
+  Before mapping or overlaying spatial layers, ensure all datasets use the same projection. Convert to WGS84 (EPSG:4326) if needed.
+
+* **Inaccurate locations due to low precision**
+
+  Coordinates with too few decimal places can cause misplacement. Round them to 5 or more decimals.
+
+### SNT context
+
+In the SNT process, health facility data is typically shared by the SNT team in Excel or CSV format, with coordinates provided in **longitude and latitude**. Therefore, the **Geographic Coordinate System (WGS84 / EPSG:4326)** is used for mapping.
+
+
+### Data quality considerations
+
+**Before working with health facilities coordinates data, verify with the SNT team the following:**
+
+- Coordinate accuracy and completeness (no missing lat/lon values)  
+- Facility names and identifiers are consistent and unique  
+- Facility type classifications are standardized  
+
+## Step-by-Step
+
+This section guides users through creating comprehensive health facility maps with professional styling and multiple visualization approaches. The example uses **Sierra Leone** health facility data with administrative boundaries, but the principles apply to any country's healthcare infrastructure.
+
+To skip the step-by-step explanation, jump to the full code at the end of this page.
+
+<a href="#bottom-section">
+  <button class="btn btn-primary">Jump to Full Code</button>
+</a>
+
+### Step 1: Install and load packages
+
+Install and load the necessary packages for handling spatial data, reading various file formats, data manipulation, and advanced visualization.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| warning: false
+
+# Check if 'pacman' is installed; install it if missing
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+# Load all required packages using pacman
+pacman::p_load(
+  sf,           # for reading and handling spatial data
+  readxl,       # for reading Excel files
+  readr,        # for reading CSVs
+  dplyr,        # for data manipulation
+  stringr,      # for string cleaning and formatting
+  ggplot2,      # for creating plots
+  RColorBrewer, # for color palettes
+  scales,       # for formatting scales and labels
+  here,         # for cross-platform file paths
+  measurements   # for unit conversions
+)
+```
+
+**To adapt the code**:
+
+- Do not modify anything in the code above
+
+## Python
+
+:::
+
+### Step 2: Load and clean data
+
+This step loads administrative boundary data and facility-level geocoordinates, then performs essential cleaning and formatting for accurate mapping. It addresses common issues such as missing values, incorrect formats, projection mismatches, and low precision.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# Define paths to data files
+shapefile_path <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+facilities_path <- here::here("english/data_r", "mfl_hfs.xlsx")
+
+# Read the shapefile (administrative boundaries)
+adm_boundaries <- sf::st_read(shapefile_path, quiet = TRUE)
+
+# Assign or ensure correct projection (WGS84)
+sf::st_crs(adm_boundaries) <- 4326
+
+# Read facility data
+facilities_raw <- readxl::read_excel(facilities_path)
+
+# === Data cleaning steps for coordinates ===
+
+# 1. Remove rows with missing coordinates
+facilities_clean <- facilities_raw[!is.na(facilities_raw$w_long) & !is.na(facilities_raw$w_lat), ]
+
+# 2. Optional: Convert DMS to decimal degrees (uncomment if needed)
+#facilities_clean$w_lat <- measurements::conv_unit(facilities_clean$w_lat, "dms", "dec")
+#facilities_clean$w_long <- measurements::conv_unit(facilities_clean$w_long, "dms", "dec")
+
+# 3. Round coordinates to ensure precision
+facilities_clean$w_lat <- round(as.numeric(facilities_clean$w_lat), 5)
+facilities_clean$w_long <- round(as.numeric(facilities_clean$w_long), 5)
+
+# 4. Optional: Create spatial object for facilities
+facilities_sf <- sf::st_as_sf(facilities_clean, coords = c("w_long", "w_lat"), crs = 4326)
+
+# === Print Data Summaries ===
+base::print("Administrative boundary columns:")
+base::print(base::names(adm_boundaries))
+
+base::print("Facility data columns (after cleaning):")
+base::print(base::names(facilities_clean))
+
+base::print("Sample of facility data:")
+base::print(utils::head(facilities_clean, 5))
+```
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true 
+#| warning: false
+# Define paths to data files
+shapefile_path <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+facilities_path <- here::here("english/data_r", "mfl_hfs.xlsx")
+
+# Read the shapefile (administrative boundaries)
+adm_boundaries <- sf::st_read(shapefile_path, quiet = TRUE)
+
+# Assign or ensure correct projection (WGS84)
+sf::st_crs(adm_boundaries) <- 4326
+
+# Read facility data
+facilities_raw <- readxl::read_excel(facilities_path)
+
+# === Data cleaning steps for coordinates ===
+
+# 1. Remove rows with missing coordinates
+facilities_clean <- facilities_raw[!is.na(facilities_raw$w_long) & !is.na(facilities_raw$w_lat), ]
+
+# 2. Optional: Convert DMS to decimal degrees (uncomment if needed)
+#facilities_clean$w_lat <- measurements::conv_unit(facilities_clean$w_lat, "dms", "dec")
+#facilities_clean$w_long <- measurements::conv_unit(facilities_clean$w_long, "dms", "dec")
+
+# 3. Round coordinates to ensure precision
+facilities_clean$w_lat <- round(as.numeric(facilities_clean$w_lat), 5)
+facilities_clean$w_long <- round(as.numeric(facilities_clean$w_long), 5)
+
+# 4. Optional: Create spatial object for facilities
+facilities_sf <- sf::st_as_sf(facilities_clean, coords = c("w_long", "w_lat"), crs = 4326)
+
+# === Print Data Summaries ===
+base::print("Administrative boundary columns:")
+base::print(base::names(adm_boundaries))
+
+base::print("Facility data columns (after cleaning):")
+base::print(base::names(facilities_clean))
+
+base::print("Sample of facility data:")
+base::print(utils::head(facilities_clean, 5))
+```
+
+:::
+
+**To adapt the code**:
+
+- **Line 2**: Change `english/Shapefiles` to match the `folder/subfolder` where the shapefile components are saved
+
+- **Line 3**: Change `english/data_r` to match the "folder/subfolder" where the file is saved
+
+- **Lines 17, 24 & 28**: Set `w_long` to the dataset’s longitude column and `w_lat` to the latitude column.
+
+## Python
+
+:::
+
+### Step 3: Create basic facility map
+
+Create maps displaying health facility locations overlaid on administrative boundaries. Plot points directly using longitude and latitude values for clear visualization
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+# Create output directory
+output_dir <- here::here("english/outputs")
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Create basic facility map
+facilities_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = adm_boundaries, fill = "white", color = "black") +
+  ggplot2::geom_point(
+    data = facilities_clean,
+    ggplot2::aes(x = w_long, y = w_lat),
+    color = "#47B5FF", size = 2
+  ) +
+  ggplot2::coord_sf() +
+  ggplot2::theme_minimal() +
+  ggplot2::labs(title = "Health facilities in Sierra Leone")
+
+# Display the map
+facilities_map
+
+# Save map
+ggplot2::ggsave(
+  filename = file.path(output_dir, "health_facility_locations.png"),
+  plot = facilities_map, width = 10, height = 7, bg = "white"
+)
+```
+
+
+::: {.callout-note icon=false}
+
+## Output
+```{r}
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+# Create output directory
+output_dir <- here::here("english/outputs")
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Create basic facility map
+facilities_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = adm_boundaries, fill = "white", color = "black") +
+  ggplot2::geom_point(
+    data = facilities_clean,
+    ggplot2::aes(x = w_long, y = w_lat),
+    color = "#47B5FF", size = 2
+  ) +
+  ggplot2::coord_sf() +
+  ggplot2::theme_minimal() +
+  ggplot2::labs(title = "Health facilities in Sierra Leone")
+
+# Display the map
+facilities_map
+
+# Save map
+ggplot2::ggsave(
+  filename = file.path(output_dir, "health_facility_locations.png"),
+  plot = facilities_map, width = 10, height = 7, bg = "white"
+)
+```
+
+:::
+
+**To adapt the code**:
+
+- **Line 2**: Set or change the output directory
+
+- **Lines 7–23**: Update all function arguments, including `data`, `fill`, `color`, `x`, `y`, `size`, `title`, `filename`, `plot`, `width`, `height`, and `bg`, to reflect the desired values or inputs
+
+
+
+## Python
+
+:::
+
+### Step 4: Visualize facilities by type
+
+Create maps displaying health facilities colored by facility type.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+# Create facility type map
+facility_type_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = adm_boundaries, fill = "white", color = "gray50") +
+  ggplot2::geom_point(
+    data = facilities_clean,
+    ggplot2::aes(x = w_long, y = w_lat, color = type),
+    size = 2
+  ) +
+  ggplot2::coord_sf() + 
+  ggplot2::scale_color_brewer(palette = "Set1", name = "Facility Type") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(legend.position = "bottom") +
+  ggplot2::labs(title = "Health facility types in Sierra Leone")
+
+# Display the map
+facility_type_map
+
+# Save map
+ggplot2::ggsave(
+  filename = file.path(output_dir, "health_facility_by_type.png"),
+  plot = facility_type_map, width = 10, height = 7, bg = "white"
+)
+```
+
+
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+# Create facility type map
+facility_type_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = adm_boundaries, fill = "white", color = "gray50") +
+  ggplot2::geom_point(
+    data = facilities_clean,
+    ggplot2::aes(x = w_long, y = w_lat, color = type),
+    size = 2
+  ) +
+  ggplot2::coord_sf() + 
+  ggplot2::scale_color_brewer(palette = "Set1", name = "Facility Type") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(legend.position = "bottom") +
+  ggplot2::labs(title = "Health facility types in Sierra Leone")
+
+# Display the map
+facility_type_map
+
+# Save map
+ggplot2::ggsave(
+  filename = file.path(output_dir, "health_facility_by_type.png"),
+  plot = facility_type_map, width = 10, height = 7, bg = "white"
+)
+```
+:::
+
+**To adapt the code**:
+
+- **Lines 7–23**: Update all function arguments, including `data`, `fill`, `color`, `palette`, `name`, `legend.position`, `x`, `y`, `size`, `title`, `filename`, `plot`, `width`, `height`, and `bg`, to reflect the desired values or inputs
+
+## Python
+
+:::
+
+## Summary
+
+This workflow outlines steps to visualize health facility coordinates effectively:
+
+- **Data quality**: Identify and handle missing coordinates before mapping.
+- **Direct coordinate mapping**: Plot locations using longitude and latitude directly with geom_point() for clear visualization.
+- **Facility type analysis**: Color-code facilities by type to reveal service distribution patterns.
+
+Apply these visualizations to identify potential coverage gaps and guide decisions on facility placement and resource allocation for SNT implementation.
+
+<div id="bottom-section"></div>
+
+## Full code
+
+::: {.panel-tabset}
+
+## R
+
+**Find the full code script for mapping the locations of health facilities using shapefiles**
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+# =============================================================================
+# Health facilities mapping and visualization
+# =============================================================================
+# This script creates comprehensive health facility maps with administrative 
+# boundaries, showing facility locations and distributions by type.
+# Designed for SNT (Sub-National Tailoring) processes but adaptable to any
+# healthcare infrastructure mapping needs.
+
+# =============================================================================
+# Step 1: Install and load packages
+# =============================================================================
+
+# Check if 'pacman' is installed; install it if missing
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+# Load all required packages using pacman
+pacman::p_load(
+  sf,           # for reading and handling spatial data
+  readxl,       # for reading Excel files
+  readr,        # for reading CSVs
+  dplyr,        # for data manipulation
+  stringr,      # for string cleaning and formatting
+  ggplot2,      # for creating plots
+  RColorBrewer, # for color palettes
+  scales,       # for formatting scales and labels
+  here,         # for cross-platform file paths
+  measurements  # for unit conversions (DMS to decimal degrees)
+)
+
+# =============================================================================
+# Step 2: Load and clean data
+# =============================================================================
+
+# Define paths to data files
+# TODO: Update these paths to match your file locations
+shapefile_path <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+facilities_path <- here::here("english/data_r", "mfl_hfs.xlsx")
+
+# Read the shapefile (administrative boundaries)
+# This contains the geographic boundaries for mapping context
+adm_boundaries <- sf::st_read(shapefile_path, quiet = TRUE)
+
+# Ensure correct projection (WGS84 - standard for lat/lon coordinates)
+# EPSG:4326 is the standard Geographic Coordinate System
+sf::st_crs(adm_boundaries) <- 4326
+
+# Read facility data from Excel file
+# This contains health facility information including coordinates
+facilities_raw <- readxl::read_excel(facilities_path)
+
+# =============================================================================
+# Data cleaning steps for coordinates
+# =============================================================================
+
+# 1. Remove rows with missing coordinates
+# Facilities without lat/lon cannot be mapped, so filter them out
+facilities_clean <- facilities_raw[!is.na(facilities_raw$w_long) & 
+                                   !is.na(facilities_raw$w_lat), ]
+
+# 2. Optional: Convert DMS (Degrees-Minutes-Seconds) to decimal degrees
+# Uncomment these lines if your coordinates are in DMS format instead of decimal
+# facilities_clean$w_lat <- measurements::conv_unit(facilities_clean$w_lat, "dms", "dec")
+# facilities_clean$w_long <- measurements::conv_unit(facilities_clean$w_long, "dms", "dec")
+
+# 3. Round coordinates to ensure precision (5 decimal places = ~1 meter accuracy)
+# This standardizes coordinate precision and handles overly precise values
+facilities_clean$w_lat <- round(as.numeric(facilities_clean$w_lat), 5)
+facilities_clean$w_long <- round(as.numeric(facilities_clean$w_long), 5)
+
+# 4. Optional: Create spatial object for facilities
+# This converts the dataframe to a spatial object for advanced spatial operations
+facilities_sf <- sf::st_as_sf(facilities_clean, 
+                              coords = c("w_long", "w_lat"), 
+                              crs = 4326)
+
+# =============================================================================
+# Data summary and verification
+# =============================================================================
+
+# Print data summaries to verify successful loading and cleaning
+base::print("Administrative boundary columns:")
+base::print(base::names(adm_boundaries))
+
+base::print("Facility data columns (after cleaning):")
+base::print(base::names(facilities_clean))
+
+base::print("Sample of facility data:")
+base::print(utils::head(facilities_clean, 5))
+
+base::print(paste("Total facilities with coordinates:", nrow(facilities_clean)))
+
+# =============================================================================
+# Step 3: Create basic facility map
+# =============================================================================
+
+# Create output directory for saving maps
+output_dir <- here::here("english/outputs")
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Create basic facility map showing all health facilities as blue points
+facilities_map <- ggplot2::ggplot() +
+  # Add administrative boundaries as background
+  ggplot2::geom_sf(data = adm_boundaries, 
+                   fill = "white",      # White fill for clean appearance
+                   color = "black") +   # Black borders for clear definition
+  # Add facility points using longitude and latitude coordinates
+  ggplot2::geom_point(
+    data = facilities_clean,
+    ggplot2::aes(x = w_long, y = w_lat),  # Map coordinates to x,y positions
+    color = "#47B5FF",                    # Professional blue color
+    size = 2                              # Readable point size
+  ) +
+  # Use spatial coordinate system for proper geographic projection
+  ggplot2::coord_sf() +
+  # Apply clean, minimal theme
+  ggplot2::theme_minimal() +
+  # Add descriptive title
+  ggplot2::labs(title = "Health facilities in Sierra Leone")
+
+# Display the map
+facilities_map
+
+# Save the basic facility map
+ggplot2::ggsave(
+  filename = file.path(output_dir, "health_facility_locations.png"),
+  plot = facilities_map, 
+  width = 10,           # Width in inches
+  height = 7,           # Height in inches
+  bg = "white"          # White background for clean appearance
+)
+
+# =============================================================================
+# Step 4: Visualize facilities by type
+# =============================================================================
+
+# Create facility type map with color-coded facility types
+facility_type_map <- ggplot2::ggplot() +
+  # Add administrative boundaries with subtle styling
+  ggplot2::geom_sf(data = adm_boundaries, 
+                   fill = "white",      # White fill
+                   color = "gray50") +  # Gray borders (less prominent than black)
+  # Add facility points colored by facility type
+  ggplot2::geom_point(
+    data = facilities_clean,
+    ggplot2::aes(x = w_long, y = w_lat, color = type),  # Color by facility type
+    size = 2                                            # Consistent point size
+  ) +
+  # Use spatial coordinate system
+  ggplot2::coord_sf() + 
+  # Apply ColorBrewer palette for distinct, accessible colors
+  ggplot2::scale_color_brewer(palette = "Set1", name = "Facility Type") +
+  # Clean minimal theme
+  ggplot2::theme_minimal() +
+  # Position legend at bottom for better layout
+  ggplot2::theme(legend.position = "bottom") +
+  # Descriptive title
+  ggplot2::labs(title = "Health facility types in Sierra Leone")
+
+# Display the facility type map
+facility_type_map
+
+# Save the facility type map
+ggplot2::ggsave(
+  filename = file.path(output_dir, "health_facility_by_type.png"),
+  plot = facility_type_map, 
+  width = 10, 
+  height = 7, 
+  bg = "white"
+)
+
+# =============================================================================
+# End of script
+# =============================================================================
+```
+
+
+## Python
+
+:::
