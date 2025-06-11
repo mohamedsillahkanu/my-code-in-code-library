@@ -1,0 +1,532 @@
+---
+title: "View shapefile data"
+weight: 1
+order: 1
+format: 
+  html:
+    self-contained: true
+    code-copy: true
+    toc: true
+    toc-depth: 4
+---
+
+## Overview
+
+In the context of **Subnational Tailoring (SNT)**, having accurate and current shapefiles is crucial. These files form the backbone for linking data to the geographic units. This page provides a step-by-step guide on how to load and view shapefile data effectively.
+
+
+::: {.callout-note title="Objectives" appearance="simple"}
+
+* Import all required shapefile components (`.shp`, `.shx`, `.dbf`)
+* Read shapefile into an `sf` object
+* Set a consistent Coordinate Reference System (CRS)
+* Inspect the shapefile attributes and geometry
+* Create basic maps from shapefile data
+* Overlay multiple administrative levels
+
+:::
+
+## Working with shapefiles in the context of SNT
+
+### What are shapefiles?
+
+Shapefiles are among the most widely used formats for storing geospatial vector data. They can represent geographic features such as **points**, **lines**, and **polygons**, along with their associated attributes, making them indispensable for geographic information system (GIS) applications.
+
+Although commonly referred to as a "shapefile," this format is actually a collection of multiple files that function together. While shapefiles can include several file types, only three are essential for SNT purposes:
+
+* `.shp` – contains the actual geometry of spatial features
+* `.shx` – an index file that links the geometry to attribute data
+* `.dbf` – a database file storing attribute information for each feature
+
+These three files work in parallel, with each record aligned by position—meaning the first entry in the `.shp` file corresponds to the first entry in both the `.shx` and `.dbf` files, and so on. It's important to note that the `.shp` and `.shx` files use fields with different byte orders (endianness), so careful handling is required when reading or implementing these formats.
+
+The `.shp` file specifically holds the geometry data, with each spatial feature represented as a set of vector coordinates. The file begins with a fixed-length header and is followed by one or more variable-length records, each consisting of a record header and a record content section.
+
+**Additional resources for learning about shapefiles:**
+
+* [Wikipedia: Shapefile Format](https://en.wikipedia.org/wiki/Shapefile)
+* [Mapping in R Workshop](https://mapping-in-r-workshop.ryanpeek.org/01_vector_shapefiles/)
+* [Mapscaping Guide to Shapefiles](https://mapscaping.com/read-write-shapefiles-in-r/)
+
+### Where to find shapefiles for SNT
+
+::: {.callout-important icon="true"}
+
+## Consult SNT team
+
+Before any analysis begins, these shapefiles must be reviewed and validated by the **SNT team** and must represent the official national boundary set. This ensures alignment with national standards, guarantees boundary accuracy, and avoids discrepancies in spatial data.
+
+
+:::
+
+For SNT purposes, only the official shapefiles shared by the SNT team should be used, but downloaded shapefiles from external sources can be helpful for non-SNT work, learning, or general exploration of shapefiles. If an official set of shapefiles cannot be obtained by the SNT team for SNT, the SNT team may decide to consider a public source. However, the analyst must not proceed with using downloaded shapefiles until they have been reviewed and validated by the SNT team.
+
+**Sources for general shapefile access include:**
+
+* [GADM](https://gadm.org/download_country.html): Global administrative boundaries
+* [Humanitarian Data Exchange (HDX)](https://data.humdata.org/): Humanitarian and administrative boundary datasets
+
+## Step-by-Step
+
+
+In this section, we guide you through the essential steps to load and view shapefile data.
+
+The example uses administrative boundary shapefiles from **Sierra Leone**, with focus on chiefdom (adm3) and district (adm2) levels. The principles can be applied to shapefiles from any country. 
+
+To skip the step-by-step explanation, jump to the full code at the end of this page.
+
+<a href="#bottom-section">
+  <button class="btn btn-primary">Jump to Full Code</button>
+</a>
+
+
+### Step 1: Install and load packages
+
+::: {.panel-tabset}
+
+## R
+
+First, install and load the necessary R packages for handling spatial data, data manipulation, and visualization. These libraries provide essential functions for working with spatial data. The `sf` package is particularly important as it implements simple features standards for handling geographic vector data in R.
+
+
+```{r}
+#| message: false
+#| warning: false
+
+# Install `pacman` if not already installed
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+# Load required packages using pacman
+pacman::p_load(
+  sf,         # handling spatial vector data
+  dplyr,      # data manipulation
+  ggplot2,    # plotting
+  here        # file path management
+)
+```
+
+
+**To adapt the code**:
+
+- Do not modify anything in the code above
+
+## Python
+
+:::
+
+
+### Step 2: Import and prepare the shapefiles
+
+::: {.panel-tabset}
+
+## R
+
+
+Define file paths to your shapefile components and read them into R as spatial objects. Properly loading all components of a shapefile and setting a consistent coordinate reference system ensures accurate spatial representation and compatibility with other geospatial datasets.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: true
+#| eval: true
+#| code-fold: true
+#| code-summary: "Show the code"
+#| 
+
+# Define file paths using `here` for reproducibility
+shapefile_shp <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+shapefile_shx <- here::here("english/Shapefiles", "Chiefdom2021.shx")
+shapefile_dbf <- here::here("english/Shapefiles", "Chiefdom2021.dbf")
+
+# Administrative level 1 (e.g., districts)
+adm1_shapefile <- here::here("english/Shapefiles", "District 2021.shp")
+
+# Load shapefile into an sf object 
+gdf <- sf::st_read(shapefile_shp, quiet = TRUE)
+
+# Load shapefile 
+adm1_gdf <- sf::st_read(adm1_shapefile, quiet = TRUE)
+
+# Set the Coordinate Reference System
+sf::st_crs(gdf) <- 4326
+sf::st_crs(adm1_gdf) <- 4326
+```
+
+**To adapt the code**:
+
+- Change `"english/Shapefiles"` to match the `folder/subfolder` where your shapefile components are saved
+- Update the filenames to match your specific shapefile names
+
+## Python
+
+:::
+
+
+
+### Step 3: Examine the spatial data
+
+::: {.panel-tabset}
+
+## R
+
+
+The code below displays the first 10 rows of your spatial dataset, showing both the geographic features (such as polygons for administrative areas) and their associated attribute data (like names, and codes), helping you understand the structure and contents of the shapefile before further analysis.
+
+
+```r
+# View the first 10 rows of the spatial object
+head(gdf, 10)
+```
+
+::: {.callout-note icon=false}
+
+## Output 
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+# View the first 10 rows of the spatial object
+head(gdf, 10)
+```
+
+
+:::
+
+## Python
+
+:::
+
+### Step 4: Visualize shapefile contents
+
+::: {.panel-tabset}
+
+## R
+
+
+Generate maps to visually represent your spatial data, starting with a basic map of a single administrative level. Visual representation helps validate that your shapefile has loaded correctly and gives you a clear view of the geographic boundaries. This code generates the chiefdom-level (adm3) administrative boundaries for Sierra Leone.
+
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+#| 
+# Plot the chiefdom shapefile
+ggplot() +
+  geom_sf(data = gdf, fill = "lightblue", color = "black") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(
+    title = "Map of Sierra Leone Chiefdoms (adm3)",
+    subtitle = "Administrative level 3 boundaries"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12)
+  )
+```
+
+**To adapt the code**:
+
+- Adjust `color`, `fill`, `title`, and styling to fit your needs and preferences
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+# Plot the chiefdom shapefile
+ggplot() +
+  geom_sf(data = gdf, fill = "lightblue", color = "black") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(
+    title = "Map of Sierra Leone Chiefdoms (adm3)",
+    subtitle = "Administrative level 3 boundaries"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12)
+  )
+```
+
+:::
+
+## Python
+
+::: 
+
+
+
+::: {.callout-important icon="true"}
+
+## Validate with the SNT team
+
+After creating your administrative unit maps, review them with the SNT team to ensure they accurately represent the operational units for decision-making. This validation step helps identify any issues with the shapefiles before proceeding with further analysis.
+
+:::
+
+### Step 5: Overlay multiple administrative levels
+
+::: {.panel-tabset}
+
+## R
+
+
+To add adm2 boundaries onto the map from Step 4, overlay adm2 lines without a `fill`, as shown in line 4 below. We also add adm2 names to the map to clearly identify districts.
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+# Plot overlay of district and chiefdom boundaries
+ggplot() +
+  geom_sf(data = gdf, fill = "lightblue", color = "black") +
+  geom_sf(data = adm1_gdf, fill = NA, color = "black", linewidth = 1.0) +
+  geom_sf_text(data = adm1_gdf, aes(label = FIRST_DNAM), size = 3) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(
+    title = "Overlay of Sierra Leone administrative boundaries",
+    subtitle = "Districts (adm2) and Chiefdoms (adm3)"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12)
+  )
+```
+
+
+**To adapt the code**:
+
+- Adjust `color`, `fill`, `title`, and styling to fit your needs and preferences
+- If you have more than two administrative levels, you can add additional `geom_sf()` layers
+- You may need to adjust the `label` parameter in `geom_sf_text()` to match the column in your data containing the names
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+
+# Plot overlay of district and chiefdom boundaries
+ggplot() +
+  geom_sf(data = gdf, fill = "lightblue", color = "gray") +
+  geom_sf(data = adm1_gdf, fill = NA, color = "black", linewidth = 1.0) +
+  geom_sf_text(data = adm1_gdf, aes(label = FIRST_DNAM), size = 2, color="black") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(
+    title = "Overlay of Sierra Leone administrative boundaries",
+    subtitle = "Districts (adm2) and Chiefdoms (adm3)"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12)
+  )
+```
+
+:::
+
+## Python
+
+:::
+
+
+## Summary
+
+We've now covered the essential steps for reading and visualizing geospatial shapefiles in R using the `sf` package. This included:
+
+1. Setting up the necessary environment with spatial data packages
+2. Importing shapefiles and setting coordinate reference systems
+3. Examining the structure of spatial data
+4. Creating basic and overlay maps of administrative boundaries
+
+These steps provide the foundation for more advanced spatial analysis and visualization.
+
+::: {.callout-important icon="true"}
+
+## Validate with the SNT team
+
+Before proceeding with further analysis, share your shapefile maps with the SNT team for validation. The team will help ensure that:
+
+1. The shapefiles accurately represent the current administrative boundaries
+2. The boundaries align with the operational units for decision-making
+3. There are no discrepancies between the shapefile data and official boundaries
+4. Any mapping decisions (colors, labels, symbology) are consistent with program standards
+
+This validation step is crucial for maintaining data integrity throughout the SNT process.
+
+:::
+
+<div id="bottom-section"></div>
+
+## Full code
+
+::: {.panel-tabset}
+
+## R
+
+
+**Find the full code script for viewing shapefile data below.**
+
+```{r}
+#| message: false
+#| echo: true
+#| results: "hide"
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# ----------------------------------
+# Step 1: Set up the environment
+# ----------------------------------
+
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  sf,
+  dplyr,
+  ggplot2,
+  here
+)
+
+# ----------------------------------------------
+# Step 2:  Import and prepare the shapefiles
+#-----------------------------------------------
+
+# Define file paths using `here` for reproducibility
+shapefile_shp <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+shapefile_shx <- here::here("english/Shapefiles", "Chiefdom2021.shx")
+shapefile_dbf <- here::here("english/Shapefiles", "Chiefdom2021.dbf")
+
+# Administrative level 1 (e.g., districts)
+adm1_shapefile <- here::here("english/Shapefiles", "District 2021.shp")
+
+# Load shapefile into an sf object with suppressed output
+gdf <- sf::st_read(shapefile_shp, quiet = TRUE)
+
+# Load district-level shapefile with suppressed output
+adm1_gdf <- sf::st_read(adm1_shapefile, quiet = TRUE)
+
+# Set the Coordinate Reference System
+sf::st_crs(gdf) <- 4326
+sf::st_crs(adm1_gdf) <- 4326
+
+# --------------------------------------------------
+# Step 3: Examine the spatial data
+# --------------------------------------------------
+
+# View the first 10 rows of the spatial object
+head(gdf, 10)
+
+# --------------------------------------------------
+# Step 4: Visualize shapefile contents
+# --------------------------------------------------
+
+# Create output folder if it doesn't exist
+output_dir <- here::here("english/library/data/shapefiles/Shapefile outputs/")
+if (!dir.exists(output_dir)) dir.create(output_dir)
+
+# Plot the chiefdom shapefile
+basic_map <- ggplot() +
+  geom_sf(data = gdf, fill = "lightblue", color = "black") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(
+    title = "Map of Sierra Leone Chiefdoms (ADM3)",
+    subtitle = "Administrative level 3 boundaries"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12)
+  )
+
+ggsave(
+  filename = file.path(output_dir, "chiefdom_boundaries.png"),
+  plot = basic_map,
+  width = 10,
+  height = 6
+)
+
+# --------------------------------------------------
+# Step 5:  Overlay multiple administrative levels
+# --------------------------------------------------
+
+# Plot overlay of district and chiefdom boundaries
+overlay_map <- ggplot() +
+  geom_sf(data = gdf, fill = "lightblue", color = "gray") +
+  geom_sf(data = adm1_gdf, fill = NA, color = "black", linewidth = 1.0) +
+  geom_sf_text(data = adm1_gdf, aes(label = FIRST_DNAM), size = 2, color="black") +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(
+    title = "Overlay of Sierra Leone administrative boundaries",
+    subtitle = "Districts (adm2) and Chiefdoms (adm3)"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 12)
+  )
+
+ggsave(
+  filename = file.path(output_dir, "overlay_district_chiefdom.png"),
+  plot = overlay_map,
+  width = 8,
+  height = 6
+)
+```
+
+## Python
+
+:::
