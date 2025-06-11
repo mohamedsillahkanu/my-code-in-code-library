@@ -1,0 +1,1079 @@
+---
+title: "Merging shapefile and tabular data for visualization"
+weight: 4
+order: 4
+format: 
+  html:
+    self-contained: true
+    code-copy: true
+    toc: true
+    toc-depth: 4
+---
+
+## Overview
+
+Combining geospatial data from shapefiles with tabular data creates powerful visualizations that reveal patterns and trends across geographic areas. This process merges attribute data with spatial boundaries to generate informative maps.
+
+This technique proves essential throughout SNT workflows, including:
+
+- **Surveillance mapping** – Visualizing case incidence, testing rates, treatment rates, and reporting rates  
+- **Intervention planning** – Mapping coverage areas
+
+
+Maps can display information using different approaches, each serving distinct analytical purposes:
+
+- **Continuous variable mapping** – Visualizes quantitative data across a color gradient  
+- **Binned mapping** – Groups continuous data into meaningful categories with distinct colors  
+- **Categorical mapping** – Displays discrete categories or classifications  
+- **Custom color mapping** – Applies specific colors based on predetermined criteria  
+
+::: {.callout-note title="Objectives" appearance="simple"}
+- Integrate spatial and tabular data by merging shapefiles with datasets using common identifiers  
+- Visualize spatial patterns through thematic mapping techniques  
+- Generate maps for continuous, binned, and categorical variables  
+- Apply custom color schemes to enhance visual interpretation  
+- Use appropriate map styling to improve clarity and readability  
+:::
+
+
+## Key Concepts
+
+Understanding these fundamental concepts helps ensure successful merging and visualization of geospatial data:
+
+
+### Data merging basics
+
+**What is data merging?**  
+
+Data merging combines information from two separate datasets based on a common identifier (called a **join key**). In this case, the process links:
+
+**Shapefile** – Contains geographic boundaries and their administrative names  
+**Tabular data** – Contains indicators, measurements, or classifications for those same areas  
+
+
+### Join key
+
+**What is a join key?**  
+
+A **join key** is a column (or set of columns) used to link two datasets during a merge (also called a *join*). The values in these columns act like identifiers to match rows between tables. For example, matching geographic units, facility IDs, or time periods.
+
+**Why join keys are useful?** 
+
+In the context of SNT, join keys enable you to:
+
+- Combine **spatial data** (e.g., shapefiles) with **attribute data** (e.g., Excel or CSV data)  
+- Merge facility-level data from multiple systems  
+- Link different levels of administrative units (e.g., district to chiefdom)  
+- Create comprehensive datasets for analysis and mapping  
+
+**What to look for when merging datasets?**
+
+- Identify **common columns** that appear in both datasets  
+- Ensure they represent the same entities (e.g., `region_name`, `district_name`)  
+- Check that values **match exactly**, not just column names  
+
+**Common issues with join keys**
+
+- **Spelling inconsistencies**: `Kialohun` vs `Kailahun`  
+- **Extra spaces or special characters**: `Bo` vs `Bo.`  
+- **Abbreviations vs full names**: `Kono` vs `Kono District`  
+- **Case mismatches**: `FREETOWN` vs `Freetown`  
+- **Different formats**: `2023-01` vs `Jan-2023` (in date joins)  
+- **Different row lengths**: One dataset has 100 districts, the other only 87  
+
+
+### Choosing map types
+
+**Continuous maps** are ideal for:
+
+- Rates, percentages, or ratios (e.g., testing rates, incidence per 1,000)  
+- Measurements with natural ordering (e.g., population density)  
+- Data where small differences matter  
+
+**Binned maps** are ideal when:
+
+- You need to classify continuous data into thresholds  
+- Stakeholders need simpler categories (e.g., Low/Medium/High)  
+- Programs use specific cut-off points  
+
+**Categorical maps** are ideal for:
+
+- Classifications  
+- Program phases or strategies  
+- Mutually exclusive groupings  
+
+
+### Color best practices
+
+**For continuous/binned data:**
+
+- Use sequential color schemes (light to dark of one hue)  
+- Consider colorblind-friendly palettes ([ColorBrewer](https://colorbrewer2.org/))  
+- Ensure sufficient contrast between categories  
+
+**For categorical data:**
+
+- Use qualitative color schemes with distinct hues  
+- Avoid too many categories (7 or fewer is ideal)  
+- Consider cultural color associations  
+
+
+
+## Step-by-Step
+
+This section guides users through the process of merging tabular data with shapefiles and creating various types of maps. The example uses **Sierra Leone** administrative boundary shapefiles with malaria routine data, but the principles apply to any combination of spatial boundaries and tabular data.
+
+To skip the step-by-step explanation, jump to the full code at the end of this page.
+
+<a href="#bottom-section">
+  <button class="btn btn-primary">Jump to Full Code</button>
+</a>
+
+### Step 1: Install and load packages
+
+First, install and load the necessary packages for handling spatial data, reading various file formats, data manipulation, and visualization.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| warning: false
+
+# Check if 'pacman' is installed; install it if missing
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+# Load all required packages using pacman
+pacman::p_load(
+  sf,           # for reading and handling shapefiles
+  readxl,       # for reading Excel files
+  readr,        # for reading CSVs (not used here but preloaded)
+  dplyr,        # for data manipulation
+  stringr,      # for string cleaning and formatting
+  ggplot2,      # for creating plots
+  RColorBrewer, # for additional color palettes
+  here          # for cross-platform file paths
+)
+```
+
+**To adapt the code**:
+
+- Do not modify anything in the code above
+
+## Python
+
+:::
+
+::: {.callout-important icon="true"}
+
+## Ensuring successful data linkage
+
+When merging tabular data with shapefiles, success depends on **perfect matching of join keys** between datasets. Before proceeding:
+
+1. **Identify join columns**: Determine which columns contain administrative unit names in both the shapefile and tabular data
+2. **Standardize naming**: Clean and standardize administrative unit names to ensure exact matches
+3. **Verify completeness**: Check that all geographic areas in the analysis appear in both datasets
+4. **Test the merge**: Always examine the merged dataset to confirm all areas linked correctly
+
+**Note: If a value in either column does not merge despite all diagnostic efforts, consult the SNT team for guidance.**
+
+:::
+
+### Step 2: Import and examine data
+
+Import both datasets and examine their structure to identify the appropriate join keys. This critical step ensures understanding of the data before attempting to merge.
+
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false  
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# Define paths to shapefile and tabular Excel data
+shapefile_path <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+data_path <- here::here("english/data_r", "Chiefdom_data.xlsx")
+
+# Read in spatial and tabular data
+gdf <- sf::st_read(shapefile_path, quiet = TRUE)
+df <- readxl::read_excel(data_path)
+
+# Print column names to confirm structure
+base::print("Shapefile columns:")
+base::print(base::names(gdf))
+base::print("Tabular data columns:")
+base::print(base::names(df))
+```
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true  
+#| warning: false
+
+# Define paths to shapefile and tabular Excel data
+shapefile_path <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+data_path <- here::here("english/data_r", "Chiefdom_data.xlsx")
+
+# Read in spatial and tabular data
+gdf <- sf::st_read(shapefile_path, quiet = TRUE)
+df <- readxl::read_excel(data_path)
+
+# Print column names to confirm structure
+base::print("Shapefile columns:")
+base::print(base::names(gdf))
+base::print("Tabular data columns:")
+base::print(base::names(df))
+```
+
+:::
+
+**To adapt the code**:
+
+- **Line 2**: Change `"english/Shapefiles"` to match the `folder/subfolder` where the shapefile components are saved and then update the file name
+
+- **Line 3**: Change `"english/data_r"` to match the `folder/subfolder` the tabular data is saved and then update the file name
+
+
+## Python
+
+:::
+
+### Step 3: Clean and merge data
+
+Before merging, clean the administrative unit names to ensure successful matching, then perform the merge and verify the results.
+
+After running the merge code, the output should confirm:
+
+1. **Row counts match expectations**: The merged dataset should have the same number of rows as the shapefile
+2. **No unmatched areas**: All geographic areas should have corresponding data
+3. **No duplicates**: Each area should appear only once in the final dataset
+4. **Data integrity**: Values in key columns should look reasonable
+
+If warnings appear about unmatched areas, review the administrative unit names in both datasets for spelling differences, extra characters, or inconsistent formatting.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+# Rename and clean administrative units in shapefile
+gdf <- gdf |>
+  dplyr::rename(adm2 = FIRST_DNAM, adm3 = FIRST_CHIE) |>  # Rename columns for consistency
+  dplyr::mutate(
+    adm2_clean = stringr::str_trim(base::toupper(adm2)),  # Clean and uppercase adm2
+    adm3_clean = stringr::str_trim(base::toupper(adm3))   # Clean and uppercase adm3
+  )
+
+# Repeat cleaning for tabular data
+df <- df |>
+  dplyr::rename(adm2 = FIRST_DNAM, adm3 = FIRST_CHIE) |>
+  dplyr::mutate(
+    adm2_clean = stringr::str_trim(base::toupper(adm2)),
+    adm3_clean = stringr::str_trim(base::toupper(adm3))
+  )
+
+# Merge spatial and tabular data using cleaned keys
+merged_data <- dplyr::left_join(gdf, df, by = c("adm2_clean", "adm3_clean"))
+
+# Print row counts for sanity check
+base::print(base::paste("Rows in shapefile:", base::nrow(gdf)))
+base::print(base::paste("Rows in tabular data:", base::nrow(df)))  
+base::print(base::paste("Rows in merged data:", base::nrow(merged_data)))
+
+# Check for unmatched areas (e.g., missing testing rates after merge)
+unmatched <- merged_data |>
+  dplyr::filter(base::is.na(Testing_rate)) |>  # Replace 'Testing_rate' with your indicator if needed
+  dplyr::select(adm2_clean)
+
+if (base::nrow(unmatched) > 0) {
+  base::print("WARNING: These areas from shapefile didn't match with tabular data:")
+  base::print(unmatched)
+} else {
+  base::print("SUCCESS: All areas matched successfully!")
+}
+
+# Check for duplicate entries in the merged dataset
+duplicates <- merged_data |>
+  dplyr::group_by(adm2_clean) |>
+  dplyr::filter(dplyr::n() > 1)
+
+if (base::nrow(duplicates) > 0) {
+  base::print("WARNING: Duplicate areas detected:")
+  base::print(dplyr::select(duplicates, adm2_clean))
+}
+
+```
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+# Rename and clean administrative units in shapefile
+gdf <- gdf |>
+  dplyr::rename(adm2 = FIRST_DNAM, adm3 = FIRST_CHIE) |>  # Rename columns for consistency
+  dplyr::mutate(
+    adm2_clean = stringr::str_trim(base::toupper(adm2)),  # Clean and uppercase adm2
+    adm3_clean = stringr::str_trim(base::toupper(adm3))   # Clean and uppercase adm3
+  )
+
+# Repeat cleaning for tabular data
+df <- df |>
+  dplyr::rename(adm2 = FIRST_DNAM, adm3 = FIRST_CHIE) |>
+  dplyr::mutate(
+    adm2_clean = stringr::str_trim(base::toupper(adm2)),
+    adm3_clean = stringr::str_trim(base::toupper(adm3))
+  )
+
+# Merge spatial and tabular data using cleaned keys
+merged_data <- dplyr::left_join(gdf, df, by = c("adm2_clean", "adm3_clean"))
+
+# Print row counts for sanity check
+base::print(base::paste("Rows in shapefile:", base::nrow(gdf)))
+base::print(base::paste("Rows in tabular data:", base::nrow(df)))  
+base::print(base::paste("Rows in merged data:", base::nrow(merged_data)))
+
+# Check for unmatched areas (e.g., missing testing rates after merge)
+unmatched <- merged_data |>
+  dplyr::filter(base::is.na(Testing_rate)) |>  # Replace 'Testing_rate' with your indicator if needed
+  dplyr::select(adm2_clean)
+
+if (base::nrow(unmatched) > 0) {
+  base::print("WARNING: These areas from shapefile didn't match with tabular data:")
+  base::print(unmatched)
+} else {
+  base::print("SUCCESS: All areas matched successfully!")
+}
+
+# Check for duplicate entries in the merged dataset
+duplicates <- merged_data |>
+  dplyr::group_by(adm2_clean) |>
+  dplyr::filter(dplyr::n() > 1)
+
+if (base::nrow(duplicates) > 0) {
+  base::print("WARNING: Duplicate areas detected:")
+  base::print(dplyr::select(duplicates, adm2_clean))
+}
+```
+
+:::
+
+
+**To adapt the code**:
+
+- **Lines 3 and 11**: Replace `adm2=FIRST_DNAM` and `adm3=FIRST_CHIE` with the actual join column names
+- **Line 18**: Adjust the `by` parameter to match the cleaned column names
+- **Line 27**: Replace `Testing_rate` with one of the indicator columns to check for missing matches
+
+## Python
+
+:::
+
+### Step 4: Create a continuous variable map
+
+Generate a map with a smooth color gradient for continuous variables. This approach effectively shows fine gradations in data such as rates, percentages, or other numeric indicators.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+# Create a continuous variable map with scoped functions
+continuous_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = Testing_rate), color = "white", size = 0.1) +
+  ggplot2::scale_fill_distiller(
+    palette = "Blues",
+    direction = 1,
+    name = "Testing rate (%)",
+    limits = c(0, 100)
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "Proportion of suspected malaria cases tested – 2024",
+    caption = "Data source: Sierra Leone National Malaria Control Program"
+  )
+
+# Display the map
+base::print(continuous_map)
+
+
+```
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+
+# Create a continuous variable map with scoped functions
+continuous_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = Testing_rate), color = "white", size = 0.1) +
+  ggplot2::scale_fill_distiller(
+    palette = "Blues",
+    direction = 1,
+    name = "Testing rate (%)",
+    limits = c(0, 100)
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "Proportion of suspected malaria cases tested – 2024",
+    caption = "Data source: Sierra Leone National Malaria Control Program"
+  )
+
+# Display the map
+base::print(continuous_map)
+```
+
+:::
+
+**To adapt the code**:
+
+- **Line 3**: Replace `Testing_rate` any continuous variable in the dataset
+
+- **Line 5**: Modify the color palette using one of the options from this reference: [RColorBrewer Palette Guide](https://www.datanovia.com/en/blog/the-a-z-of-rcolorbrewer-palette/). These sites offer sequential, diverging, qualitative, and custom palettes suitable for maps and charts.
+
+- **Line 6**: Set direction (1 = light to dark, -1 = dark to light)
+- **Line 7**: Update legend label
+- **Line 8**: Adjust limits to match the data range
+- **Lines 22-23**: Customize title and caption
+
+## Python
+
+:::
+
+### Step 5: Create a binned map with custom categories
+
+Create a map that groups continuous data into meaningful categories. This approach proves ideal when analysis requires classifying data according to program thresholds or creating simplified visual categories.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}  
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# Define program-relevant bins and labels
+breaks <- c(0, 25, 50, 75, 100)
+labels <- c("Low (0-25%)", "Moderate (25-50%)", "High (50-75%)", "Very High (75-100%)")
+
+# Categorize testing rates based on bins
+merged_data <- merged_data |>
+  dplyr::mutate(
+    testing_category = base::cut(
+      Testing_rate,
+      breaks = breaks,
+      labels = labels,
+      include.lowest = TRUE
+    )
+  )
+
+# Define color palette for bins (ColorBrewer Blues shades)
+bin_colors <- c("#deebf7", "#9ecae1", "#3182bd", "#08519c")
+
+# Create the binned map plot
+binned_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = testing_category), color = "white", size = 0.1) +
+  ggplot2::scale_fill_manual(
+    values = bin_colors,
+    name = "Testing Rate",
+    drop = FALSE
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "Proportion of suspected malaria cases tested – 2024",
+    caption = "Data source:Sierra Leone National Malaria Control Programme"
+  )
+  
+
+# Display the map
+base::print(binned_map)
+```
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}  
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+# Define program-relevant bins and labels
+breaks <- c(0, 25, 50, 75, 100)
+labels <- c("Low (0-25%)", "Moderate (25-50%)", "High (50-75%)", "Very High (75-100%)")
+
+# Categorize testing rates based on bins
+merged_data <- merged_data |>
+  dplyr::mutate(
+    testing_category = base::cut(
+      Testing_rate,
+      breaks = breaks,
+      labels = labels,
+      include.lowest = TRUE
+    )
+  )
+
+# Define color palette for bins (ColorBrewer Blues shades)
+bin_colors <- c("#deebf7", "#9ecae1", "#3182bd", "#08519c")
+
+# Create the binned map plot
+binned_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = testing_category), color = "white", size = 0.1) +
+  ggplot2::scale_fill_manual(
+    values = bin_colors,
+    name = "Testing Rate",
+    drop = FALSE
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "Proportion of suspected malaria cases tested – 2024",
+    caption = "Data source:Sierra Leone National Malaria Control Programme"
+  )
+
+# Display the map
+base::print(binned_map)
+```
+
+:::
+
+**To adapt the code**:
+
+- **Lines 2-3**: Adjust `breaks` and `labels` to match the data and program needs
+
+- **Lines 9**:  Replace `Testing_rate` any continuous variable in the dataset
+
+- **Line 24**: Modify `bin_colors` using [ColorBrewer palettes](https://colorbrewer2.org/#type=sequential&scheme=Blues&n=4)  
+  or [custom hex codes](https://www.color-hex.com/) to match program branding or improve accessibility
+
+- **Lines 39-40**: Update title, subtitle, and caption
+
+## Python
+
+:::
+
+### Step 6: Create a categorical map
+
+Create a map that displays discrete categories using distinct colors. This type of map proves useful for visualizing classification schemes, intervention strategies, or yes/no classifications.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# Create a categorical map of IRS coverage
+categorical_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = IRS), color = "black", size = 0.1) +
+  ggplot2::scale_fill_brewer(palette = "Set3", name = "IRS") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "IRS implementation in Sierra Leone (2024)",
+    caption = "Data source:Siera Leone National Malaria Control Programme"
+  )
+
+# Display the map
+base::print(categorical_map)
+```
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+
+# Create a categorical map of IRS coverage
+categorical_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = IRS), color = "black", size = 0.1) +
+  ggplot2::scale_fill_brewer(palette = "Set3", name = "IRS") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "IRS implementation in Sierra Leone (2024)",
+    caption = "Data source:Siera Leone National Malaria Control Programme"
+  )
+
+# Display the map
+base::print(categorical_map)
+```
+
+:::
+
+
+**To adapt the code**:
+
+- **Line 3**: Replace `IRS` with the categorical variable of interest in the dataset
+
+- **Line 4**:  Modify the color palette using one of the options from this reference: [RColorBrewer Palette Guide](https://www.datanovia.com/en/blog/the-a-z-of-rcolorbrewer-palette/). These sites offer sequential, diverging, qualitative, and custom palettes suitable for maps and charts.
+
+- **Lines 17-18**: Update title and caption
+
+## Python
+
+:::
+
+
+### Step 7: Create a custom color map
+
+Apply specific colors to categories based on program requirements or organizational standards. This approach provides complete control over the visual representation.
+
+::: {.panel-tabset}
+
+## R
+
+```{r}
+#| message: false
+#| echo: true
+#| eval: false
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# Define custom colors for specific IRS categories
+color_mapping <- c(
+  'YES' = '#47B5FF',  # Sky blue for IRS implementation
+  'NO' = '#FFFFFF'   # White for no IRS
+)
+# Create the custom-colored map
+custom_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = IRS), color = "black", size = 0.1) +
+  ggplot2::scale_fill_manual(values = color_mapping, name = "IRS") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "IRS implementation in Sierra Leone (2024)",
+    caption = "Data source:Siera Leone National Malaria Control Programme"
+  )
+
+# Display the map
+base::print(custom_map)
+```
+
+
+::: {.callout-note icon=false}
+
+## Output
+
+```{r}
+#| message: false
+#| echo: false
+#| eval: true
+#| warning: false
+
+# Define custom colors for specific IRS categories
+color_mapping <- c(
+  'YES' = '#47B5FF',  # Sky blue for IRS implementation
+  'NO' = '#FFFFFF'   # White for no IRS
+)
+
+
+# Create the custom-colored map
+custom_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = IRS), color = "black", size = 0.1) +
+  ggplot2::scale_fill_manual(values = color_mapping, name = "IRS") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "IRS implementation in Sierra Leone (2024)",
+    caption = "Data source:Siera Leone National Malaria Control Programme"
+  )
+
+# Display the map
+base::print(custom_map)
+```
+
+:::
+
+**To adapt the code**:
+
+- **Lines 3-4**: Replace hex color codes with desirable colors
+
+- **Line 8-9**: Replace `IRS` with the categorical variable of interest in the dataset
+
+- **Lines 22-23**: Update title and caption
+
+
+## Python
+
+:::
+
+## Summary
+
+This guide covered the essential steps for merging tabular data with shapefiles and creating various types of thematic maps:
+
+1. **Environment setup** - Installing packages for spatial data processing and visualization
+2. **Data import and examination** - Loading datasets and identifying appropriate join keys  
+3. **Data cleaning and merging** - Standardizing administrative unit names and performing the merge
+4. **Continuous variable mapping** - Creating smooth color gradients for numeric data
+5. **Binned mapping** - Grouping continuous data into meaningful categorical thresholds
+6. **Categorical mapping** - Displaying discrete classifications with distinct colors
+7. **Custom color mapping** - Applying organization-specific color schemes
+
+These techniques enable creation of informative, accurate maps that effectively communicate spatial patterns and support evidence-based decision making throughout SNT programs.
+
+<div id="bottom-section"></div>
+
+## Full code
+
+**Complete script for merging and mapping shapefile data with tabular data.**
+
+```{r}
+#| message: false
+#| echo: true
+#| results: "hide"
+#| warning: false
+#| code-fold: true
+#| code-summary: "Show the code"
+
+# ----------------------------------
+# Step 1: Install & load packages
+# ----------------------------------
+
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  sf, readxl, readr, dplyr, stringr,
+  ggplot2, RColorBrewer, here
+)
+
+# ----------------------------------
+# Step 2: Import and examine data
+# ----------------------------------
+
+shapefile_path <- here::here("english/Shapefiles", "Chiefdom2021.shp")
+data_path <- here::here("english/data_r", "Chiefdom_data.xlsx")
+
+gdf <- sf::st_read(shapefile_path, quiet = TRUE)
+df <- readxl::read_excel(data_path)
+
+base::print("Shapefile columns:")
+base::print(base::names(gdf))
+base::print("Tabular data columns:")
+base::print(base::names(df))
+
+# ----------------------------------
+# Step 3: Clean and merge data
+# ----------------------------------
+
+gdf <- gdf |>
+  dplyr::rename(adm2 = FIRST_DNAM, adm3 = FIRST_CHIE) |>
+  dplyr::mutate(
+    adm2_clean = stringr::str_trim(base::toupper(adm2)),
+    adm3_clean = stringr::str_trim(base::toupper(adm3))
+  )
+
+df <- df |>
+  dplyr::rename(adm2 = FIRST_DNAM, adm3 = FIRST_CHIE) |>
+  dplyr::mutate(
+    adm2_clean = stringr::str_trim(base::toupper(adm2)),
+    adm3_clean = stringr::str_trim(base::toupper(adm3))
+  )
+
+merged_data <- dplyr::left_join(gdf, df, by = c("adm2_clean", "adm3_clean"))
+
+base::print(base::paste("Rows in shapefile:", base::nrow(gdf)))
+base::print(base::paste("Rows in tabular data:", base::nrow(df)))  
+base::print(base::paste("Rows in merged data:", base::nrow(merged_data)))
+
+unmatched <- merged_data |>
+  dplyr::filter(base::is.na(Testing_rate)) |>
+  dplyr::select(adm2_clean)
+
+if (base::nrow(unmatched) > 0) {
+  base::print("WARNING: These areas from shapefile didn't match with tabular data:")
+  base::print(unmatched)
+} else {
+  base::print("SUCCESS: All areas matched successfully!")
+}
+
+duplicates <- merged_data |>
+  dplyr::group_by(adm2_clean) |>
+  dplyr::filter(dplyr::n() > 1)
+
+if (base::nrow(duplicates) > 0) {
+  base::print("WARNING: Duplicate areas detected:")
+  base::print(dplyr::select(duplicates, adm2_clean))
+}
+
+output_dir <- here::here("english/outputs/maps/")
+if (!base::dir.exists(output_dir)) base::dir.create(output_dir, recursive = TRUE)
+
+# ----------------------------------
+# Step 4: Continuous variable map
+# ----------------------------------
+
+continuous_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = Testing_rate), color = "white", size = 0.1) +
+  ggplot2::scale_fill_distiller(
+    palette = "Blues",
+    direction = 1,
+    name = "Testing rate (%)",
+    limits = c(0, 100)
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "Proportion of suspected malaria cases tested – 2024",
+    caption = "Data source:Sierra Leone National Malaria Control Programme"
+    
+  )
+
+ggplot2::ggsave(
+  filename = base::file.path(output_dir, "continuous_map.png"),
+  plot = continuous_map,
+  width = 8,
+  height = 6
+)
+
+# ----------------------------------
+# Step 5: Binned map
+# ----------------------------------
+
+breaks <- c(0, 25, 50, 75, 100)
+labels <- c("Low (0-25%)", "Moderate (25-50%)", "High (50-75%)", "Very High (75-100%)")
+
+merged_data <- merged_data |>
+  dplyr::mutate(
+    testing_category = base::cut(
+      Testing_rate,
+      breaks = breaks,
+      labels = labels,
+      include.lowest = TRUE
+    )
+  )
+
+bin_colors <- c("#deebf7", "#9ecae1", "#3182bd", "#08519c")
+
+binned_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = testing_category), color = "white", size = 0.1) +
+  ggplot2::scale_fill_manual(
+    values = bin_colors,
+    name = "Testing Rate",
+    drop = FALSE
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "Proportion of suspected malaria cases tested – 2024",
+    caption = "Data source:Sierra Leone National Malaria Control Programme"
+  )
+
+ggplot2::ggsave(
+  filename = base::file.path(output_dir, "binned_map.png"),
+  plot = binned_map,
+  width = 8,
+  height = 6
+)
+
+# ----------------------------------
+# Step 6: Categorical map
+# ----------------------------------
+
+categorical_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = IRS), color = "black", size = 0.1) +
+  ggplot2::scale_fill_brewer(palette = "Set3", name = "IRS") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "IRS implementation in Sierra Leone (2024)",
+    caption = "Data source:Siera Leone National Malaria Control Programme"
+  )
+
+ggplot2::ggsave(
+  filename = base::file.path(output_dir, "categorical_map.png"),
+  plot = categorical_map,
+  width = 8,
+  height = 6
+)
+
+# ----------------------------------
+# Step 7: Custom color map
+# ----------------------------------
+color_mapping <- c(
+  'YES' = '#47B5FF',  # Sky blue for IRS implementation
+  'NO' = '#FFFFFF'   # White for no IRS
+)
+
+custom_map <- ggplot2::ggplot() +
+  ggplot2::geom_sf(data = merged_data, ggplot2::aes(fill = IRS), color = "black", size = 0.1) +
+  ggplot2::scale_fill_manual(values = color_mapping, name = "IRS") +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid = ggplot2::element_blank(),
+    axis.text = ggplot2::element_blank(),
+    axis.ticks = ggplot2::element_blank(),
+    axis.title = ggplot2::element_blank(),
+    legend.position = "right",
+    plot.title = ggplot2::element_text(face = "bold", size = 14),
+    plot.subtitle = ggplot2::element_text(size = 10),
+    plot.caption = ggplot2::element_text(size = 8, hjust = 0)
+  ) +
+  ggplot2::labs(
+    title = "IRS implementation in Sierra Leone (2024)",
+    caption = "Data source:Siera Leone National Malaria Control Programme"
+  )
+
+ggplot2::ggsave(
+  filename = base::file.path(output_dir, "custom_map.png"),
+  plot = custom_map,
+  width = 8,
+  height = 6
+)
+```
